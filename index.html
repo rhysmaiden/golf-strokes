@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="theme-color" content="#1f6f3f" />
+<title>Golf Strokes Tracker</title>
+<style>
+  :root {
+    --bg: #f4f6f4;
+    --card: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --accent: #1f6f3f;
+    --accent-ink: #ffffff;
+    --gain: #1f6f3f;
+    --loss: #b3261e;
+    --gain-soft: #e6f1ea;
+    --loss-soft: #fbeae9;
+    --tap: 48px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 16px; line-height: 1.4; }
+  body { padding-bottom: env(safe-area-inset-bottom); }
+  header { position: sticky; top: 0; background: var(--accent); color: var(--accent-ink); padding: 14px 16px; z-index: 10; padding-top: max(14px, env(safe-area-inset-top)); }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  header .round-meta { font-size: 12px; opacity: 0.9; margin-top: 4px; }
+  main { padding: 12px; max-width: 720px; margin: 0 auto; }
+  .card { background: var(--card); border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  .card h2 { margin: 0 0 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input[type="text"], input[type="date"], select {
+    width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px;
+    font-size: 16px; background: #fff; color: var(--ink); min-height: var(--tap);
+  }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  button {
+    min-height: var(--tap); padding: 0 16px; border-radius: 8px; border: 1px solid var(--line);
+    background: #fff; color: var(--ink); font-size: 15px; font-weight: 500; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.danger { color: var(--loss); border-color: var(--loss); background: #fff; }
+  button.ghost { background: transparent; border: none; color: var(--accent-ink); font-weight: 500; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn-row > * { flex: 1; min-width: 120px; }
+
+  .hole-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .hole-btn {
+    min-height: 44px; padding: 0; border-radius: 8px; border: 1px solid var(--line);
+    background: #fff; font-weight: 600; font-size: 15px; position: relative;
+  }
+  .hole-btn.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .hole-btn .dot {
+    position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%;
+  }
+  .hole-btn .dot.has-data { background: var(--loss); }
+  .hole-btn.active .dot.has-data { background: #ffd54a; }
+
+  details { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; overflow: hidden; background: #fff; }
+  details[open] { border-color: var(--accent); }
+  summary {
+    list-style: none; padding: 14px; min-height: var(--tap); cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between; font-weight: 600;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "▾"; transition: transform 0.15s; color: var(--muted); }
+  details[open] summary::after { transform: rotate(180deg); }
+  details.gain summary .pill { background: var(--gain-soft); color: var(--gain); }
+  details.loss summary .pill { background: var(--loss-soft); color: var(--loss); }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; min-width: 24px; text-align: center; }
+  .options { padding: 0 14px 8px; }
+  .opt {
+    display: flex; align-items: center; gap: 12px; padding: 10px 4px;
+    border-top: 1px solid var(--line); min-height: var(--tap);
+  }
+  .opt:first-child { border-top: none; }
+  .opt input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent); flex-shrink: 0; }
+  .opt label { margin: 0; color: var(--ink); font-size: 15px; flex: 1; cursor: pointer; }
+  .opt .count { font-size: 13px; color: var(--muted); }
+
+  .summary-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .summary-table th, .summary-table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  .summary-table th { font-size: 12px; color: var(--muted); text-transform: uppercase; font-weight: 600; }
+  .summary-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .summary-table tr.gain td:first-child::before { content: "▲ "; color: var(--gain); }
+  .summary-table tr.loss td:first-child::before { content: "▼ "; color: var(--loss); }
+
+  .totals { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .totals .stat { background: #fff; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid var(--line); }
+  .totals .stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .totals .stat .value { font-size: 22px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .totals .stat.gain .value { color: var(--gain); }
+  .totals .stat.loss .value { color: var(--loss); }
+
+  .per-hole { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .per-hole th, .per-hole td { padding: 6px 4px; text-align: center; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .per-hole th { font-size: 11px; color: var(--muted); }
+  .per-hole td.gain { color: var(--gain); font-weight: 600; }
+  .per-hole td.loss { color: var(--loss); font-weight: 600; }
+  .per-hole .empty { color: var(--line); }
+
+  .rounds-list { list-style: none; padding: 0; margin: 0; }
+  .rounds-list li {
+    display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line);
+  }
+  .rounds-list li:last-child { border-bottom: none; }
+  .rounds-list .meta { flex: 1; min-width: 0; }
+  .rounds-list .meta .course { font-weight: 600; }
+  .rounds-list .meta .date { font-size: 12px; color: var(--muted); }
+  .rounds-list .meta.active .course::after { content: " • active"; color: var(--accent); font-weight: 500; font-size: 12px; }
+  .rounds-list button { min-height: 36px; padding: 0 10px; font-size: 13px; }
+
+  .empty-state { text-align: center; color: var(--muted); padding: 24px 12px; font-size: 14px; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none;
+    align-items: flex-end; justify-content: center; z-index: 100;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--card); width: 100%; max-width: 560px; border-radius: 16px 16px 0 0;
+    padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom));
+    max-height: 90vh; overflow-y: auto;
+  }
+  .modal h2 { margin: 0 0 12px; font-size: 17px; }
+  .modal .actions { display: flex; gap: 8px; margin-top: 16px; }
+  .modal .actions > * { flex: 1; }
+
+  nav.tabs {
+    display: flex; background: #fff; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 5;
+  }
+  nav.tabs button {
+    flex: 1; border: none; border-radius: 0; background: transparent;
+    padding: 12px 8px; font-weight: 500; color: var(--muted); border-bottom: 2px solid transparent;
+  }
+  nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>
+    <span>⛳ Golf Strokes</span>
+    <button class="ghost" id="open-rounds">Rounds</button>
+  </h1>
+  <div class="round-meta" id="round-meta">No active round</div>
+</header>
+
+<nav class="tabs">
+  <button data-tab="track" class="active">Track</button>
+  <button data-tab="summary">Summary</button>
+</nav>
+
+<main>
+  <section id="tab-track">
+    <div id="no-round" class="card empty-state hidden">
+      No active round. <br><br>
+      <button class="primary" id="start-first-round">Start a round</button>
+    </div>
+
+    <div id="round-content">
+      <div class="card">
+        <h2>Hole</h2>
+        <div class="hole-grid" id="hole-grid"></div>
+      </div>
+
+      <div class="card">
+        <h2>This hole</h2>
+        <details class="gain" id="gain-details">
+          <summary>Strokes Gained <span class="pill" id="gain-pill">0</span></summary>
+          <div class="options" id="gain-options"></div>
+        </details>
+        <details class="loss" id="loss-details">
+          <summary>Strokes Lost <span class="pill" id="loss-pill">0</span></summary>
+          <div class="options" id="loss-options"></div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-summary" class="hidden">
+    <div id="summary-empty" class="card empty-state hidden">
+      Start a round to see the summary.
+    </div>
+    <div id="summary-content">
+      <div class="totals">
+        <div class="stat gain"><div class="label">Gained</div><div class="value" id="total-gain">0</div></div>
+        <div class="stat loss"><div class="label">Lost</div><div class="value" id="total-loss">0</div></div>
+        <div class="stat"><div class="label">Net</div><div class="value" id="total-net">0</div></div>
+      </div>
+
+      <div class="card">
+        <h2>By category</h2>
+        <table class="summary-table" id="cat-table">
+          <thead><tr><th>Category</th><th class="num">Total</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>By hole</h2>
+        <div style="overflow-x: auto;">
+          <table class="per-hole" id="per-hole-table"></table>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Rounds modal -->
+<div class="modal-backdrop" id="rounds-modal">
+  <div class="modal">
+    <h2>Rounds</h2>
+    <button class="primary" id="new-round-btn" style="width: 100%; margin-bottom: 12px;">+ New Round</button>
+    <ul class="rounds-list" id="rounds-list"></ul>
+    <div class="actions">
+      <button id="close-rounds">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- New round modal -->
+<div class="modal-backdrop" id="new-round-modal">
+  <div class="modal">
+    <h2>New Round</h2>
+    <div style="margin-bottom: 12px;">
+      <label for="course-input">Course</label>
+      <input type="text" id="course-input" placeholder="e.g. Pebble Beach" autocomplete="off" />
+    </div>
+    <div style="margin-bottom: 12px;">
+      <label for="date-input">Date</label>
+      <input type="date" id="date-input" />
+    </div>
+    <div class="actions">
+      <button id="cancel-new-round">Cancel</button>
+      <button class="primary" id="confirm-new-round">Start</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const GAIN_OPTIONS = [
+    "Great drive",
+    "Approach close",
+    "One-putt",
+    "Up-and-down",
+    "Long putt made",
+  ];
+  const LOSS_OPTIONS = [
+    "OB",
+    "Water",
+    "3-putt",
+    "Chunked chip",
+    "Missed short putt",
+    "Penalty",
+  ];
+
+  const STORAGE_KEY = "golf_strokes_v1";
+
+  // State shape:
+  // { activeId: string|null, rounds: { [id]: { id, course, date, createdAt, holes: { [n]: { gain: string[], loss: string[] } } } } }
+  let state = load();
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return { activeId: null, rounds: {} };
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return { activeId: null, rounds: {} };
+      parsed.rounds = parsed.rounds || {};
+      if (parsed.activeId && !parsed.rounds[parsed.activeId]) parsed.activeId = null;
+      return parsed;
+    } catch {
+      return { activeId: null, rounds: {} };
+    }
+  }
+  function save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+  function activeRound() {
+    return state.activeId ? state.rounds[state.activeId] : null;
+  }
+  function ensureHole(round, n) {
+    if (!round.holes[n]) round.holes[n] = { gain: [], loss: [] };
+    return round.holes[n];
+  }
+
+  // UI state
+  let currentHole = 1;
+  let currentTab = "track";
+
+  // ---- Render ----
+  const $ = (id) => document.getElementById(id);
+
+  function renderHeader() {
+    const r = activeRound();
+    $("round-meta").textContent = r ? `${r.course} · ${formatDate(r.date)}` : "No active round";
+  }
+
+  function renderTabs() {
+    document.querySelectorAll("nav.tabs button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.tab === currentTab);
+    });
+    $("tab-track").classList.toggle("hidden", currentTab !== "track");
+    $("tab-summary").classList.toggle("hidden", currentTab !== "summary");
+  }
+
+  function renderTrack() {
+    const r = activeRound();
+    if (!r) {
+      $("no-round").classList.remove("hidden");
+      $("round-content").classList.add("hidden");
+      return;
+    }
+    $("no-round").classList.add("hidden");
+    $("round-content").classList.remove("hidden");
+
+    // Hole grid
+    const grid = $("hole-grid");
+    grid.innerHTML = "";
+    for (let n = 1; n <= 18; n++) {
+      const btn = document.createElement("button");
+      btn.className = "hole-btn" + (n === currentHole ? " active" : "");
+      btn.textContent = n;
+      const hole = r.holes[n];
+      const hasData = hole && (hole.gain.length || hole.loss.length);
+      if (hasData) {
+        const dot = document.createElement("span");
+        dot.className = "dot has-data";
+        btn.appendChild(dot);
+      }
+      btn.addEventListener("click", () => {
+        currentHole = n;
+        renderTrack();
+      });
+      grid.appendChild(btn);
+    }
+
+    // Options for current hole
+    const hole = ensureHole(r, currentHole);
+    renderOptions("gain-options", GAIN_OPTIONS, hole.gain, (next) => {
+      hole.gain = next;
+      save();
+      $("gain-pill").textContent = hole.gain.length;
+      // refresh hole dot
+      renderTrack();
+    });
+    renderOptions("loss-options", LOSS_OPTIONS, hole.loss, (next) => {
+      hole.loss = next;
+      save();
+      $("loss-pill").textContent = hole.loss.length;
+      renderTrack();
+    });
+    $("gain-pill").textContent = hole.gain.length;
+    $("loss-pill").textContent = hole.loss.length;
+  }
+
+  function renderOptions(containerId, options, selected, onChange) {
+    const container = $(containerId);
+    container.innerHTML = "";
+    const set = new Set(selected);
+    options.forEach((opt) => {
+      const row = document.createElement("div");
+      row.className = "opt";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      const cbId = containerId + "-" + opt.replace(/\W+/g, "-");
+      cb.id = cbId;
+      cb.checked = set.has(opt);
+      const label = document.createElement("label");
+      label.htmlFor = cbId;
+      label.textContent = opt;
+      cb.addEventListener("change", () => {
+        if (cb.checked) set.add(opt);
+        else set.delete(opt);
+        onChange(Array.from(set));
+      });
+      row.appendChild(cb);
+      row.appendChild(label);
+      container.appendChild(row);
+    });
+  }
+
+  function renderSummary() {
+    const r = activeRound();
+    const hasData = !!r;
+    $("summary-empty").classList.toggle("hidden", hasData);
+    $("summary-content").classList.toggle("hidden", !hasData);
+    if (!hasData) return;
+
+    const counts = { gain: {}, loss: {} };
+    GAIN_OPTIONS.forEach((o) => (counts.gain[o] = 0));
+    LOSS_OPTIONS.forEach((o) => (counts.loss[o] = 0));
+    let totalGain = 0, totalLoss = 0;
+    for (let n = 1; n <= 18; n++) {
+      const h = r.holes[n];
+      if (!h) continue;
+      h.gain.forEach((o) => { if (o in counts.gain) { counts.gain[o]++; totalGain++; } });
+      h.loss.forEach((o) => { if (o in counts.loss) { counts.loss[o]++; totalLoss++; } });
+    }
+
+    $("total-gain").textContent = totalGain;
+    $("total-loss").textContent = totalLoss;
+    const net = totalGain - totalLoss;
+    $("total-net").textContent = (net > 0 ? "+" : "") + net;
+
+    const tbody = $("cat-table").querySelector("tbody");
+    tbody.innerHTML = "";
+    const addRow = (cls, name, count) => {
+      const tr = document.createElement("tr");
+      tr.className = cls;
+      tr.innerHTML = `<td>${name}</td><td class="num">${count}</td>`;
+      tbody.appendChild(tr);
+    };
+    GAIN_OPTIONS.forEach((o) => addRow("gain", o, counts.gain[o]));
+    LOSS_OPTIONS.forEach((o) => addRow("loss", o, counts.loss[o]));
+
+    // Per-hole table
+    const tbl = $("per-hole-table");
+    tbl.innerHTML = "";
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    headRow.innerHTML = "<th>Hole</th>" + Array.from({length:18},(_,i)=>`<th>${i+1}</th>`).join("");
+    thead.appendChild(headRow);
+    tbl.appendChild(thead);
+    const tbody2 = document.createElement("tbody");
+    const gainRow = document.createElement("tr");
+    gainRow.innerHTML = "<td>▲</td>" + Array.from({length:18},(_,i)=>{
+      const h = r.holes[i+1];
+      const c = h ? h.gain.length : 0;
+      return `<td class="${c?"gain":"empty"}">${c||"–"}</td>`;
+    }).join("");
+    const lossRow = document.createElement("tr");
+    lossRow.innerHTML = "<td>▼</td>" + Array.from({length:18},(_,i)=>{
+      const h = r.holes[i+1];
+      const c = h ? h.loss.length : 0;
+      return `<td class="${c?"loss":"empty"}">${c||"–"}</td>`;
+    }).join("");
+    tbody2.appendChild(gainRow);
+    tbody2.appendChild(lossRow);
+    tbl.appendChild(tbody2);
+  }
+
+  function renderRoundsList() {
+    const list = $("rounds-list");
+    list.innerHTML = "";
+    const rounds = Object.values(state.rounds).sort((a, b) => b.createdAt - a.createdAt);
+    if (rounds.length === 0) {
+      const li = document.createElement("li");
+      li.innerHTML = `<div class="meta"><div class="course" style="color: var(--muted);">No rounds yet</div></div>`;
+      list.appendChild(li);
+      return;
+    }
+    rounds.forEach((r) => {
+      const li = document.createElement("li");
+      const isActive = r.id === state.activeId;
+      const meta = document.createElement("div");
+      meta.className = "meta" + (isActive ? " active" : "");
+      meta.innerHTML = `<div class="course">${escapeHtml(r.course)}</div><div class="date">${formatDate(r.date)}</div>`;
+      li.appendChild(meta);
+
+      if (!isActive) {
+        const openBtn = document.createElement("button");
+        openBtn.textContent = "Open";
+        openBtn.addEventListener("click", () => {
+          state.activeId = r.id;
+          currentHole = 1;
+          save();
+          renderAll();
+          closeModal("rounds-modal");
+        });
+        li.appendChild(openBtn);
+      }
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "danger";
+      delBtn.textContent = "Delete";
+      delBtn.addEventListener("click", () => {
+        if (!confirm(`Delete round "${r.course}" (${formatDate(r.date)})? This can't be undone.`)) return;
+        delete state.rounds[r.id];
+        if (state.activeId === r.id) state.activeId = null;
+        save();
+        renderAll();
+        renderRoundsList();
+      });
+      li.appendChild(delBtn);
+
+      list.appendChild(li);
+    });
+  }
+
+  function renderAll() {
+    renderHeader();
+    renderTabs();
+    renderTrack();
+    renderSummary();
+  }
+
+  // ---- Modals ----
+  function openModal(id) { $(id).classList.add("open"); }
+  function closeModal(id) { $(id).classList.remove("open"); }
+
+  // ---- Helpers ----
+  function formatDate(iso) {
+    if (!iso) return "";
+    const d = new Date(iso + "T00:00:00");
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+  function todayISO() {
+    const d = new Date();
+    const tz = d.getTimezoneOffset() * 60000;
+    return new Date(d - tz).toISOString().slice(0, 10);
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  }
+
+  // ---- Wire up ----
+  document.querySelectorAll("nav.tabs button").forEach((b) => {
+    b.addEventListener("click", () => {
+      currentTab = b.dataset.tab;
+      renderTabs();
+      if (currentTab === "summary") renderSummary();
+    });
+  });
+
+  $("open-rounds").addEventListener("click", () => {
+    renderRoundsList();
+    openModal("rounds-modal");
+  });
+  $("close-rounds").addEventListener("click", () => closeModal("rounds-modal"));
+
+  $("new-round-btn").addEventListener("click", () => {
+    $("course-input").value = "";
+    $("date-input").value = todayISO();
+    closeModal("rounds-modal");
+    openModal("new-round-modal");
+    setTimeout(() => $("course-input").focus(), 50);
+  });
+  $("start-first-round").addEventListener("click", () => {
+    $("course-input").value = "";
+    $("date-input").value = todayISO();
+    openModal("new-round-modal");
+    setTimeout(() => $("course-input").focus(), 50);
+  });
+  $("cancel-new-round").addEventListener("click", () => closeModal("new-round-modal"));
+  $("confirm-new-round").addEventListener("click", () => {
+    const course = $("course-input").value.trim() || "Unnamed course";
+    const date = $("date-input").value || todayISO();
+    const id = uid();
+    state.rounds[id] = { id, course, date, createdAt: Date.now(), holes: {} };
+    state.activeId = id;
+    currentHole = 1;
+    save();
+    closeModal("new-round-modal");
+    renderAll();
+  });
+
+  // Close modal when tapping backdrop
+  document.querySelectorAll(".modal-backdrop").forEach((m) => {
+    m.addEventListener("click", (e) => { if (e.target === m) m.classList.remove("open"); });
+  });
+
+  renderAll();
+})();
+</script>
+</body>
+</html>
