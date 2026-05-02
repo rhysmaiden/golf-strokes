@@ -165,6 +165,7 @@
 <nav class="tabs">
   <button data-tab="track" class="active">Track</button>
   <button data-tab="summary">Summary</button>
+  <button data-tab="alltime">All-time</button>
 </nav>
 
 <main>
@@ -239,6 +240,41 @@
         <div style="overflow-x: auto;">
           <table class="per-hole" id="per-hole-table"></table>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-alltime" class="hidden">
+    <div id="alltime-empty" class="card empty-state hidden">
+      No rounds saved yet.
+    </div>
+    <div id="alltime-content">
+      <div class="totals">
+        <div class="stat gain"><div class="label">Gained</div><div class="value" id="at-gain">0</div></div>
+        <div class="stat loss"><div class="label">Lost</div><div class="value" id="at-loss">0</div></div>
+        <div class="stat"><div class="label">Net</div><div class="value" id="at-net">0</div></div>
+      </div>
+      <div class="totals">
+        <div class="stat"><div class="label">GIR</div><div class="value" id="at-gir">0/0</div></div>
+        <div class="stat"><div class="label">GIR+1</div><div class="value" id="at-girplus1">0/0</div></div>
+        <div class="stat"><div class="label">Holes played</div><div class="value" id="at-holes">0</div></div>
+      </div>
+      <div class="card">
+        <div style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">
+          Across <span id="at-rounds-count">0</span> rounds
+        </div>
+        <h2>By category</h2>
+        <table class="summary-table" id="at-cat-table">
+          <thead><tr><th>Category</th><th class="num">Total</th><th class="num">Per round</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>By round</h2>
+        <table class="summary-table" id="at-rounds-table">
+          <thead><tr><th>Round</th><th class="num">▲</th><th class="num">▼</th><th class="num">GIR</th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
     </div>
   </section>
@@ -353,6 +389,7 @@
     });
     $("tab-track").classList.toggle("hidden", currentTab !== "track");
     $("tab-summary").classList.toggle("hidden", currentTab !== "summary");
+    $("tab-alltime").classList.toggle("hidden", currentTab !== "alltime");
   }
 
   function renderTrack() {
@@ -452,6 +489,31 @@
     });
   }
 
+  function aggregateRound(r) {
+    const agg = {
+      counts: { gain: {}, loss: {} },
+      totalGain: 0, totalLoss: 0,
+      girYes: 0, girAnswered: 0,
+      girp1Yes: 0, girp1Answered: 0,
+      holesPlayed: 0,
+    };
+    GAIN_OPTIONS.forEach((o) => (agg.counts.gain[o] = 0));
+    LOSS_OPTIONS.forEach((o) => (agg.counts.loss[o] = 0));
+    if (!r) return agg;
+    for (let n = 1; n <= 18; n++) {
+      const h = r.holes[n];
+      if (!h) continue;
+      h.gain.forEach((o) => { if (o in agg.counts.gain) { agg.counts.gain[o]++; agg.totalGain++; } });
+      h.loss.forEach((o) => { if (o in agg.counts.loss) { agg.counts.loss[o]++; agg.totalLoss++; } });
+      if (h.gir === true) { agg.girYes++; agg.girAnswered++; }
+      else if (h.gir === false) { agg.girAnswered++; }
+      if (h.girPlus1 === true) { agg.girp1Yes++; agg.girp1Answered++; }
+      else if (h.girPlus1 === false) { agg.girp1Answered++; }
+      if (holeHasData(h)) agg.holesPlayed++;
+    }
+    return agg;
+  }
+
   function renderSummary() {
     const r = activeRound();
     const hasData = !!r;
@@ -459,23 +521,9 @@
     $("summary-content").classList.toggle("hidden", !hasData);
     if (!hasData) return;
 
-    const counts = { gain: {}, loss: {} };
-    GAIN_OPTIONS.forEach((o) => (counts.gain[o] = 0));
-    LOSS_OPTIONS.forEach((o) => (counts.loss[o] = 0));
-    let totalGain = 0, totalLoss = 0;
-    let girYes = 0, girAnswered = 0, girp1Yes = 0, girp1Answered = 0;
-    let holesPlayed = 0;
-    for (let n = 1; n <= 18; n++) {
-      const h = r.holes[n];
-      if (!h) continue;
-      h.gain.forEach((o) => { if (o in counts.gain) { counts.gain[o]++; totalGain++; } });
-      h.loss.forEach((o) => { if (o in counts.loss) { counts.loss[o]++; totalLoss++; } });
-      if (h.gir === true) { girYes++; girAnswered++; }
-      else if (h.gir === false) { girAnswered++; }
-      if (h.girPlus1 === true) { girp1Yes++; girp1Answered++; }
-      else if (h.girPlus1 === false) { girp1Answered++; }
-      if (holeHasData(h)) holesPlayed++;
-    }
+    const agg = aggregateRound(r);
+    const counts = agg.counts;
+    const { totalGain, totalLoss, girYes, girAnswered, girp1Yes, girp1Answered, holesPlayed } = agg;
 
     $("total-gain").textContent = totalGain;
     $("total-loss").textContent = totalLoss;
@@ -533,6 +581,66 @@
     tbl.appendChild(tbody2);
   }
 
+  function renderAllTime() {
+    const rounds = Object.values(state.rounds).sort((a, b) => b.createdAt - a.createdAt);
+    const hasData = rounds.length > 0;
+    $("alltime-empty").classList.toggle("hidden", hasData);
+    $("alltime-content").classList.toggle("hidden", !hasData);
+    if (!hasData) return;
+
+    const total = {
+      counts: { gain: {}, loss: {} },
+      totalGain: 0, totalLoss: 0,
+      girYes: 0, girAnswered: 0,
+      girp1Yes: 0, girp1Answered: 0,
+      holesPlayed: 0,
+    };
+    GAIN_OPTIONS.forEach((o) => (total.counts.gain[o] = 0));
+    LOSS_OPTIONS.forEach((o) => (total.counts.loss[o] = 0));
+
+    const perRound = rounds.map((r) => {
+      const a = aggregateRound(r);
+      total.totalGain += a.totalGain;
+      total.totalLoss += a.totalLoss;
+      total.girYes += a.girYes; total.girAnswered += a.girAnswered;
+      total.girp1Yes += a.girp1Yes; total.girp1Answered += a.girp1Answered;
+      total.holesPlayed += a.holesPlayed;
+      GAIN_OPTIONS.forEach((o) => (total.counts.gain[o] += a.counts.gain[o]));
+      LOSS_OPTIONS.forEach((o) => (total.counts.loss[o] += a.counts.loss[o]));
+      return { round: r, agg: a };
+    });
+
+    $("at-gain").textContent = total.totalGain;
+    $("at-loss").textContent = total.totalLoss;
+    const net = total.totalGain - total.totalLoss;
+    $("at-net").textContent = (net > 0 ? "+" : "") + net;
+    $("at-gir").textContent = `${total.girYes}/${total.girAnswered}`;
+    $("at-girplus1").textContent = `${total.girp1Yes}/${total.girp1Answered}`;
+    $("at-holes").textContent = total.holesPlayed;
+    $("at-rounds-count").textContent = rounds.length;
+
+    const catBody = $("at-cat-table").querySelector("tbody");
+    catBody.innerHTML = "";
+    const addCatRow = (cls, name, count) => {
+      const per = (count / rounds.length).toFixed(1);
+      const tr = document.createElement("tr");
+      tr.className = cls;
+      tr.innerHTML = `<td>${name}</td><td class="num">${count}</td><td class="num">${per}</td>`;
+      catBody.appendChild(tr);
+    };
+    GAIN_OPTIONS.forEach((o) => addCatRow("gain", o, total.counts.gain[o]));
+    LOSS_OPTIONS.forEach((o) => addCatRow("loss", o, total.counts.loss[o]));
+
+    const roundsBody = $("at-rounds-table").querySelector("tbody");
+    roundsBody.innerHTML = "";
+    perRound.forEach(({ round, agg }) => {
+      const tr = document.createElement("tr");
+      const gir = agg.girAnswered ? `${agg.girYes}/${agg.girAnswered}` : "–";
+      tr.innerHTML = `<td><div>${escapeHtml(round.course)}</div><div style="font-size: 11px; color: var(--muted);">${formatDate(round.date)}</div></td><td class="num">${agg.totalGain}</td><td class="num">${agg.totalLoss}</td><td class="num">${gir}</td>`;
+      roundsBody.appendChild(tr);
+    });
+  }
+
   function renderRoundsList() {
     const list = $("rounds-list");
     list.innerHTML = "";
@@ -586,6 +694,7 @@
     renderTabs();
     renderTrack();
     renderSummary();
+    renderAllTime();
   }
 
   // ---- Modals ----
@@ -614,6 +723,7 @@
       currentTab = b.dataset.tab;
       renderTabs();
       if (currentTab === "summary") renderSummary();
+      else if (currentTab === "alltime") renderAllTime();
     });
   });
 
