@@ -70,6 +70,17 @@
   details.gain summary .pill { background: var(--gain-soft); color: var(--gain); }
   details.loss summary .pill { background: var(--loss-soft); color: var(--loss); }
   .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; min-width: 24px; text-align: center; }
+
+  .yn-row { display: flex; gap: 10px; margin-bottom: 10px; }
+  .yn-item { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .yn-label { font-size: 13px; font-weight: 600; color: var(--muted); text-align: center; }
+  .yn-buttons { display: flex; gap: 6px; }
+  .yn-buttons button {
+    flex: 1; min-height: 40px; padding: 0; border-radius: 8px; border: 1px solid var(--line);
+    background: #fff; color: var(--ink); font-size: 14px; font-weight: 600;
+  }
+  .yn-buttons button.sel-yes { background: var(--gain); color: #fff; border-color: var(--gain); }
+  .yn-buttons button.sel-no { background: var(--loss); color: #fff; border-color: var(--loss); }
   .options { padding: 0 14px 8px; }
   .opt {
     display: flex; align-items: center; gap: 12px; padding: 10px 4px;
@@ -171,6 +182,22 @@
 
       <div class="card">
         <h2>This hole</h2>
+        <div class="yn-row">
+          <div class="yn-item">
+            <span class="yn-label">GIR</span>
+            <div class="yn-buttons" data-flag="gir">
+              <button data-val="yes">Yes</button>
+              <button data-val="no">No</button>
+            </div>
+          </div>
+          <div class="yn-item">
+            <span class="yn-label">GIR+1</span>
+            <div class="yn-buttons" data-flag="girPlus1">
+              <button data-val="yes">Yes</button>
+              <button data-val="no">No</button>
+            </div>
+          </div>
+        </div>
         <details class="gain" id="gain-details">
           <summary>Strokes Gained <span class="pill" id="gain-pill">0</span></summary>
           <div class="options" id="gain-options"></div>
@@ -192,6 +219,11 @@
         <div class="stat gain"><div class="label">Gained</div><div class="value" id="total-gain">0</div></div>
         <div class="stat loss"><div class="label">Lost</div><div class="value" id="total-loss">0</div></div>
         <div class="stat"><div class="label">Net</div><div class="value" id="total-net">0</div></div>
+      </div>
+      <div class="totals">
+        <div class="stat"><div class="label">GIR</div><div class="value" id="total-gir">0/0</div></div>
+        <div class="stat"><div class="label">GIR+1</div><div class="value" id="total-girplus1">0/0</div></div>
+        <div class="stat"><div class="label">Holes played</div><div class="value" id="total-holes">0</div></div>
       </div>
 
       <div class="card">
@@ -292,8 +324,14 @@
     return state.activeId ? state.rounds[state.activeId] : null;
   }
   function ensureHole(round, n) {
-    if (!round.holes[n]) round.holes[n] = { gain: [], loss: [] };
-    return round.holes[n];
+    if (!round.holes[n]) round.holes[n] = { gain: [], loss: [], gir: null, girPlus1: null };
+    const h = round.holes[n];
+    if (!("gir" in h)) h.gir = null;
+    if (!("girPlus1" in h)) h.girPlus1 = null;
+    return h;
+  }
+  function holeHasData(h) {
+    return !!h && (h.gain.length || h.loss.length || h.gir !== null || h.girPlus1 !== null);
   }
 
   // UI state
@@ -334,8 +372,7 @@
       btn.className = "hole-btn" + (n === currentHole ? " active" : "");
       btn.textContent = n;
       const hole = r.holes[n];
-      const hasData = hole && (hole.gain.length || hole.loss.length);
-      if (hasData) {
+      if (holeHasData(hole)) {
         const dot = document.createElement("span");
         dot.className = "dot has-data";
         btn.appendChild(dot);
@@ -364,6 +401,28 @@
     });
     $("gain-pill").textContent = hole.gain.length;
     $("loss-pill").textContent = hole.loss.length;
+
+    renderYesNo(hole);
+  }
+
+  function renderYesNo(hole) {
+    document.querySelectorAll(".yn-buttons").forEach((group) => {
+      const flag = group.dataset.flag;
+      const current = hole[flag];
+      group.querySelectorAll("button").forEach((btn) => {
+        const val = btn.dataset.val;
+        btn.classList.remove("sel-yes", "sel-no");
+        if ((current === true && val === "yes") || (current === false && val === "no")) {
+          btn.classList.add(val === "yes" ? "sel-yes" : "sel-no");
+        }
+        btn.onclick = () => {
+          const next = (val === "yes");
+          hole[flag] = (hole[flag] === next) ? null : next; // tap again to clear
+          save();
+          renderTrack();
+        };
+      });
+    });
   }
 
   function renderOptions(containerId, options, selected, onChange) {
@@ -403,17 +462,27 @@
     GAIN_OPTIONS.forEach((o) => (counts.gain[o] = 0));
     LOSS_OPTIONS.forEach((o) => (counts.loss[o] = 0));
     let totalGain = 0, totalLoss = 0;
+    let girYes = 0, girAnswered = 0, girp1Yes = 0, girp1Answered = 0;
+    let holesPlayed = 0;
     for (let n = 1; n <= 18; n++) {
       const h = r.holes[n];
       if (!h) continue;
       h.gain.forEach((o) => { if (o in counts.gain) { counts.gain[o]++; totalGain++; } });
       h.loss.forEach((o) => { if (o in counts.loss) { counts.loss[o]++; totalLoss++; } });
+      if (h.gir === true) { girYes++; girAnswered++; }
+      else if (h.gir === false) { girAnswered++; }
+      if (h.girPlus1 === true) { girp1Yes++; girp1Answered++; }
+      else if (h.girPlus1 === false) { girp1Answered++; }
+      if (holeHasData(h)) holesPlayed++;
     }
 
     $("total-gain").textContent = totalGain;
     $("total-loss").textContent = totalLoss;
     const net = totalGain - totalLoss;
     $("total-net").textContent = (net > 0 ? "+" : "") + net;
+    $("total-gir").textContent = `${girYes}/${girAnswered}`;
+    $("total-girplus1").textContent = `${girp1Yes}/${girp1Answered}`;
+    $("total-holes").textContent = holesPlayed;
 
     const tbody = $("cat-table").querySelector("tbody");
     tbody.innerHTML = "";
@@ -447,8 +516,19 @@
       const c = h ? h.loss.length : 0;
       return `<td class="${c?"loss":"empty"}">${c||"–"}</td>`;
     }).join("");
+    const ynCell = (v) => {
+      if (v === true) return `<td class="gain">✓</td>`;
+      if (v === false) return `<td class="loss">✗</td>`;
+      return `<td class="empty">–</td>`;
+    };
+    const girRow = document.createElement("tr");
+    girRow.innerHTML = "<td>GIR</td>" + Array.from({length:18},(_,i)=> ynCell(r.holes[i+1]?.gir ?? null)).join("");
+    const girp1Row = document.createElement("tr");
+    girp1Row.innerHTML = "<td>+1</td>" + Array.from({length:18},(_,i)=> ynCell(r.holes[i+1]?.girPlus1 ?? null)).join("");
     tbody2.appendChild(gainRow);
     tbody2.appendChild(lossRow);
+    tbody2.appendChild(girRow);
+    tbody2.appendChild(girp1Row);
     tbl.appendChild(tbody2);
   }
 
