@@ -46,12 +46,14 @@
   .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
   .btn-row > * { flex: 1; min-width: 120px; }
 
-  .hole-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .hole-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
   .hole-btn {
     min-height: 44px; padding: 0; border-radius: 8px; border: 1px solid var(--line);
     background: #fff; font-weight: 600; font-size: 15px; position: relative;
   }
+  .hole-btn.alt { background: #f4ecd8; }
   .hole-btn.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .hole-btn.alt.active { background: var(--accent); }
   .hole-btn .dot {
     position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%;
   }
@@ -325,6 +327,16 @@
   const STORAGE_KEY = "golf_strokes_v1";
   const DEFAULT_COURSE = "PHGC";
 
+  const EXTRA_HOLES = { 1: ["1a","1b"], 3: ["3a","3b"], 5: ["5a","5b"], 10: ["10a","10b"], 16: ["16a","16b"] };
+  const HOLE_IDS = (() => {
+    const ids = [];
+    for (let n = 1; n <= 18; n++) {
+      ids.push(String(n));
+      if (EXTRA_HOLES[n]) ids.push(...EXTRA_HOLES[n]);
+    }
+    return ids;
+  })();
+
   // State shape:
   // { activeId, rounds: { [id]: {...} }, courses: string[] }
   let state = load();
@@ -370,7 +382,7 @@
   }
 
   // UI state
-  let currentHole = 1;
+  let currentHole = "1";
   let currentTab = "track";
 
   // ---- Render ----
@@ -403,22 +415,23 @@
     // Hole grid
     const grid = $("hole-grid");
     grid.innerHTML = "";
-    for (let n = 1; n <= 18; n++) {
+    HOLE_IDS.forEach((id) => {
       const btn = document.createElement("button");
-      btn.className = "hole-btn" + (n === currentHole ? " active" : "");
-      btn.textContent = n;
-      const hole = r.holes[n];
+      btn.className = "hole-btn" + (id === currentHole ? " active" : "");
+      if (/[a-z]$/i.test(id)) btn.classList.add("alt");
+      btn.textContent = id;
+      const hole = r.holes[id];
       if (holeHasData(hole)) {
         const dot = document.createElement("span");
         dot.className = "dot has-data";
         btn.appendChild(dot);
       }
       btn.addEventListener("click", () => {
-        currentHole = n;
+        currentHole = id;
         renderTrack();
       });
       grid.appendChild(btn);
-    }
+    });
 
     // Options for current hole
     const hole = ensureHole(r, currentHole);
@@ -489,15 +502,15 @@
     GAIN_OPTIONS.forEach((o) => (agg.counts.gain[o] = 0));
     LOSS_OPTIONS.forEach((o) => (agg.counts.loss[o] = 0));
     if (!r) return agg;
-    for (let n = 1; n <= 18; n++) {
-      const h = r.holes[n];
-      if (!h) continue;
+    HOLE_IDS.forEach((id) => {
+      const h = r.holes[id];
+      if (!h) return;
       h.gain.forEach((o) => { if (o in agg.counts.gain) { agg.counts.gain[o]++; agg.totalGain++; } });
       h.loss.forEach((o) => { if (o in agg.counts.loss) { agg.counts.loss[o]++; agg.totalLoss++; } });
       if (h.gir === true) agg.gir++;
       if (h.girPlus1 === true) agg.girp1++;
       if (holeHasData(h)) agg.holesPlayed++;
-    }
+    });
     return agg;
   }
 
@@ -536,27 +549,27 @@
     tbl.innerHTML = "";
     const thead = document.createElement("thead");
     const headRow = document.createElement("tr");
-    headRow.innerHTML = "<th>Hole</th>" + Array.from({length:18},(_,i)=>`<th>${i+1}</th>`).join("");
+    headRow.innerHTML = "<th>Hole</th>" + HOLE_IDS.map((id)=>`<th>${id}</th>`).join("");
     thead.appendChild(headRow);
     tbl.appendChild(thead);
     const tbody2 = document.createElement("tbody");
     const gainRow = document.createElement("tr");
-    gainRow.innerHTML = "<td>▲</td>" + Array.from({length:18},(_,i)=>{
-      const h = r.holes[i+1];
+    gainRow.innerHTML = "<td>▲</td>" + HOLE_IDS.map((id)=>{
+      const h = r.holes[id];
       const c = h ? h.gain.length : 0;
       return `<td class="${c?"gain":"empty"}">${c||"–"}</td>`;
     }).join("");
     const lossRow = document.createElement("tr");
-    lossRow.innerHTML = "<td>▼</td>" + Array.from({length:18},(_,i)=>{
-      const h = r.holes[i+1];
+    lossRow.innerHTML = "<td>▼</td>" + HOLE_IDS.map((id)=>{
+      const h = r.holes[id];
       const c = h ? h.loss.length : 0;
       return `<td class="${c?"loss":"empty"}">${c||"–"}</td>`;
     }).join("");
     const tickCell = (v) => v === true ? `<td class="gain">✓</td>` : `<td class="empty">–</td>`;
     const girRow = document.createElement("tr");
-    girRow.innerHTML = "<td>GIR</td>" + Array.from({length:18},(_,i)=> tickCell(r.holes[i+1]?.gir === true)).join("");
+    girRow.innerHTML = "<td>GIR</td>" + HOLE_IDS.map((id)=> tickCell(r.holes[id]?.gir === true)).join("");
     const girp1Row = document.createElement("tr");
-    girp1Row.innerHTML = "<td>+1</td>" + Array.from({length:18},(_,i)=> tickCell(r.holes[i+1]?.girPlus1 === true)).join("");
+    girp1Row.innerHTML = "<td>+1</td>" + HOLE_IDS.map((id)=> tickCell(r.holes[id]?.girPlus1 === true)).join("");
     tbody2.appendChild(gainRow);
     tbody2.appendChild(lossRow);
     tbody2.appendChild(girRow);
