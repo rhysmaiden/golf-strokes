@@ -71,16 +71,14 @@
   details.loss summary .pill { background: var(--loss-soft); color: var(--loss); }
   .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; min-width: 24px; text-align: center; }
 
-  .yn-row { display: flex; gap: 10px; margin-bottom: 10px; }
-  .yn-item { flex: 1; display: flex; flex-direction: column; gap: 6px; }
-  .yn-label { font-size: 13px; font-weight: 600; color: var(--muted); text-align: center; }
-  .yn-buttons { display: flex; gap: 6px; }
-  .yn-buttons button {
-    flex: 1; min-height: 40px; padding: 0; border-radius: 8px; border: 1px solid var(--line);
-    background: #fff; color: var(--ink); font-size: 14px; font-weight: 600;
+  .flag-row { display: flex; gap: 10px; margin-bottom: 10px; }
+  .flag-btn {
+    flex: 1; min-height: 44px; padding: 0 12px; border-radius: 8px;
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+    font-size: 15px; font-weight: 600;
   }
-  .yn-buttons button.sel-yes { background: var(--gain); color: #fff; border-color: var(--gain); }
-  .yn-buttons button.sel-no { background: var(--loss); color: #fff; border-color: var(--loss); }
+  .flag-btn.selected { background: var(--gain); color: #fff; border-color: var(--gain); }
+  .flag-btn.selected::before { content: "✓ "; }
   .options { padding: 0 14px 8px; }
   .opt {
     display: flex; align-items: center; gap: 12px; padding: 10px 4px;
@@ -183,21 +181,9 @@
 
       <div class="card">
         <h2>This hole</h2>
-        <div class="yn-row">
-          <div class="yn-item">
-            <span class="yn-label">GIR</span>
-            <div class="yn-buttons" data-flag="gir">
-              <button data-val="yes">Yes</button>
-              <button data-val="no">No</button>
-            </div>
-          </div>
-          <div class="yn-item">
-            <span class="yn-label">GIR+1</span>
-            <div class="yn-buttons" data-flag="girPlus1">
-              <button data-val="yes">Yes</button>
-              <button data-val="no">No</button>
-            </div>
-          </div>
+        <div class="flag-row">
+          <button class="flag-btn" data-flag="gir">GIR</button>
+          <button class="flag-btn" data-flag="girPlus1">GIR+1</button>
         </div>
         <details class="gain" id="gain-details">
           <summary>Strokes Gained <span class="pill" id="gain-pill">0</span></summary>
@@ -361,14 +347,15 @@
     return state.activeId ? state.rounds[state.activeId] : null;
   }
   function ensureHole(round, n) {
-    if (!round.holes[n]) round.holes[n] = { gain: [], loss: [], gir: null, girPlus1: null };
+    if (!round.holes[n]) round.holes[n] = { gain: [], loss: [], gir: false, girPlus1: false };
     const h = round.holes[n];
-    if (!("gir" in h)) h.gir = null;
-    if (!("girPlus1" in h)) h.girPlus1 = null;
+    // Migrate from older schema (null/true/false): treat anything not === true as false
+    h.gir = h.gir === true;
+    h.girPlus1 = h.girPlus1 === true;
     return h;
   }
   function holeHasData(h) {
-    return !!h && (h.gain.length || h.loss.length || h.gir !== null || h.girPlus1 !== null);
+    return !!h && (h.gain.length || h.loss.length || h.gir || h.girPlus1);
   }
 
   // UI state
@@ -440,26 +427,18 @@
     $("gain-pill").textContent = hole.gain.length;
     $("loss-pill").textContent = hole.loss.length;
 
-    renderYesNo(hole);
+    renderFlags(hole);
   }
 
-  function renderYesNo(hole) {
-    document.querySelectorAll(".yn-buttons").forEach((group) => {
-      const flag = group.dataset.flag;
-      const current = hole[flag];
-      group.querySelectorAll("button").forEach((btn) => {
-        const val = btn.dataset.val;
-        btn.classList.remove("sel-yes", "sel-no");
-        if ((current === true && val === "yes") || (current === false && val === "no")) {
-          btn.classList.add(val === "yes" ? "sel-yes" : "sel-no");
-        }
-        btn.onclick = () => {
-          const next = (val === "yes");
-          hole[flag] = (hole[flag] === next) ? null : next; // tap again to clear
-          save();
-          renderTrack();
-        };
-      });
+  function renderFlags(hole) {
+    document.querySelectorAll(".flag-btn").forEach((btn) => {
+      const flag = btn.dataset.flag;
+      btn.classList.toggle("selected", !!hole[flag]);
+      btn.onclick = () => {
+        hole[flag] = !hole[flag];
+        save();
+        renderTrack();
+      };
     });
   }
 
@@ -493,8 +472,7 @@
     const agg = {
       counts: { gain: {}, loss: {} },
       totalGain: 0, totalLoss: 0,
-      girYes: 0, girAnswered: 0,
-      girp1Yes: 0, girp1Answered: 0,
+      gir: 0, girp1: 0,
       holesPlayed: 0,
     };
     GAIN_OPTIONS.forEach((o) => (agg.counts.gain[o] = 0));
@@ -505,10 +483,8 @@
       if (!h) continue;
       h.gain.forEach((o) => { if (o in agg.counts.gain) { agg.counts.gain[o]++; agg.totalGain++; } });
       h.loss.forEach((o) => { if (o in agg.counts.loss) { agg.counts.loss[o]++; agg.totalLoss++; } });
-      if (h.gir === true) { agg.girYes++; agg.girAnswered++; }
-      else if (h.gir === false) { agg.girAnswered++; }
-      if (h.girPlus1 === true) { agg.girp1Yes++; agg.girp1Answered++; }
-      else if (h.girPlus1 === false) { agg.girp1Answered++; }
+      if (h.gir === true) agg.gir++;
+      if (h.girPlus1 === true) agg.girp1++;
       if (holeHasData(h)) agg.holesPlayed++;
     }
     return agg;
@@ -523,14 +499,14 @@
 
     const agg = aggregateRound(r);
     const counts = agg.counts;
-    const { totalGain, totalLoss, girYes, girAnswered, girp1Yes, girp1Answered, holesPlayed } = agg;
+    const { totalGain, totalLoss, gir, girp1, holesPlayed } = agg;
 
     $("total-gain").textContent = totalGain;
     $("total-loss").textContent = totalLoss;
     const net = totalGain - totalLoss;
     $("total-net").textContent = (net > 0 ? "+" : "") + net;
-    $("total-gir").textContent = `${girYes}/${girAnswered}`;
-    $("total-girplus1").textContent = `${girp1Yes}/${girp1Answered}`;
+    $("total-gir").textContent = gir;
+    $("total-girplus1").textContent = girp1;
     $("total-holes").textContent = holesPlayed;
 
     const tbody = $("cat-table").querySelector("tbody");
@@ -565,15 +541,11 @@
       const c = h ? h.loss.length : 0;
       return `<td class="${c?"loss":"empty"}">${c||"–"}</td>`;
     }).join("");
-    const ynCell = (v) => {
-      if (v === true) return `<td class="gain">✓</td>`;
-      if (v === false) return `<td class="loss">✗</td>`;
-      return `<td class="empty">–</td>`;
-    };
+    const tickCell = (v) => v === true ? `<td class="gain">✓</td>` : `<td class="empty">–</td>`;
     const girRow = document.createElement("tr");
-    girRow.innerHTML = "<td>GIR</td>" + Array.from({length:18},(_,i)=> ynCell(r.holes[i+1]?.gir ?? null)).join("");
+    girRow.innerHTML = "<td>GIR</td>" + Array.from({length:18},(_,i)=> tickCell(r.holes[i+1]?.gir === true)).join("");
     const girp1Row = document.createElement("tr");
-    girp1Row.innerHTML = "<td>+1</td>" + Array.from({length:18},(_,i)=> ynCell(r.holes[i+1]?.girPlus1 ?? null)).join("");
+    girp1Row.innerHTML = "<td>+1</td>" + Array.from({length:18},(_,i)=> tickCell(r.holes[i+1]?.girPlus1 === true)).join("");
     tbody2.appendChild(gainRow);
     tbody2.appendChild(lossRow);
     tbody2.appendChild(girRow);
@@ -591,8 +563,7 @@
     const total = {
       counts: { gain: {}, loss: {} },
       totalGain: 0, totalLoss: 0,
-      girYes: 0, girAnswered: 0,
-      girp1Yes: 0, girp1Answered: 0,
+      gir: 0, girp1: 0,
       holesPlayed: 0,
     };
     GAIN_OPTIONS.forEach((o) => (total.counts.gain[o] = 0));
@@ -602,8 +573,8 @@
       const a = aggregateRound(r);
       total.totalGain += a.totalGain;
       total.totalLoss += a.totalLoss;
-      total.girYes += a.girYes; total.girAnswered += a.girAnswered;
-      total.girp1Yes += a.girp1Yes; total.girp1Answered += a.girp1Answered;
+      total.gir += a.gir;
+      total.girp1 += a.girp1;
       total.holesPlayed += a.holesPlayed;
       GAIN_OPTIONS.forEach((o) => (total.counts.gain[o] += a.counts.gain[o]));
       LOSS_OPTIONS.forEach((o) => (total.counts.loss[o] += a.counts.loss[o]));
@@ -614,8 +585,8 @@
     $("at-loss").textContent = total.totalLoss;
     const net = total.totalGain - total.totalLoss;
     $("at-net").textContent = (net > 0 ? "+" : "") + net;
-    $("at-gir").textContent = `${total.girYes}/${total.girAnswered}`;
-    $("at-girplus1").textContent = `${total.girp1Yes}/${total.girp1Answered}`;
+    $("at-gir").textContent = total.gir;
+    $("at-girplus1").textContent = total.girp1;
     $("at-holes").textContent = total.holesPlayed;
     $("at-rounds-count").textContent = rounds.length;
 
@@ -635,8 +606,7 @@
     roundsBody.innerHTML = "";
     perRound.forEach(({ round, agg }) => {
       const tr = document.createElement("tr");
-      const gir = agg.girAnswered ? `${agg.girYes}/${agg.girAnswered}` : "–";
-      tr.innerHTML = `<td><div>${escapeHtml(round.course)}</div><div style="font-size: 11px; color: var(--muted);">${formatDate(round.date)}</div></td><td class="num">${agg.totalGain}</td><td class="num">${agg.totalLoss}</td><td class="num">${gir}</td>`;
+      tr.innerHTML = `<td><div>${escapeHtml(round.course)}</div><div style="font-size: 11px; color: var(--muted);">${formatDate(round.date)}</div></td><td class="num">${agg.totalGain}</td><td class="num">${agg.totalLoss}</td><td class="num">${agg.gir}</td>`;
       roundsBody.appendChild(tr);
     });
   }
