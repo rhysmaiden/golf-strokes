@@ -283,8 +283,12 @@
   <div class="modal">
     <h2>New Round</h2>
     <div style="margin-bottom: 12px;">
-      <label for="course-input">Course</label>
-      <input type="text" id="course-input" placeholder="e.g. Pebble Beach" autocomplete="off" />
+      <label for="course-select">Course</label>
+      <select id="course-select"></select>
+    </div>
+    <div id="course-new-wrap" class="hidden" style="margin-bottom: 12px;">
+      <label for="course-new-input">New course name</label>
+      <input type="text" id="course-new-input" placeholder="e.g. Pebble Beach" autocomplete="off" />
     </div>
     <div style="margin-bottom: 12px;">
       <label for="date-input">Date</label>
@@ -319,22 +323,29 @@
   ];
 
   const STORAGE_KEY = "golf_strokes_v1";
+  const DEFAULT_COURSE = "PHGC";
 
   // State shape:
-  // { activeId: string|null, rounds: { [id]: { id, course, date, createdAt, holes: { [n]: { gain: string[], loss: string[] } } } } }
+  // { activeId, rounds: { [id]: {...} }, courses: string[] }
   let state = load();
 
   function load() {
+    const fresh = { activeId: null, rounds: {}, courses: [DEFAULT_COURSE] };
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return { activeId: null, rounds: {} };
+      if (!raw) return fresh;
       const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object") return { activeId: null, rounds: {} };
+      if (!parsed || typeof parsed !== "object") return fresh;
       parsed.rounds = parsed.rounds || {};
       if (parsed.activeId && !parsed.rounds[parsed.activeId]) parsed.activeId = null;
+      // Build courses list: default + any saved + any from past rounds
+      const existing = new Set(parsed.courses || []);
+      existing.add(DEFAULT_COURSE);
+      Object.values(parsed.rounds).forEach((r) => { if (r.course) existing.add(r.course); });
+      parsed.courses = Array.from(existing);
       return parsed;
     } catch {
-      return { activeId: null, rounds: {} };
+      return fresh;
     }
   }
   function save() {
@@ -703,22 +714,51 @@
   });
   $("close-rounds").addEventListener("click", () => closeModal("rounds-modal"));
 
+  function populateCourseSelect() {
+    const sel = $("course-select");
+    sel.innerHTML = "";
+    state.courses.forEach((c) => {
+      const opt = document.createElement("option");
+      opt.value = c;
+      opt.textContent = c;
+      sel.appendChild(opt);
+    });
+    const addOpt = document.createElement("option");
+    addOpt.value = "__add__";
+    addOpt.textContent = "+ Add new course…";
+    sel.appendChild(addOpt);
+    sel.value = state.courses.includes(DEFAULT_COURSE) ? DEFAULT_COURSE : state.courses[0];
+    $("course-new-wrap").classList.add("hidden");
+  }
+
+  function openNewRoundModal() {
+    populateCourseSelect();
+    $("course-new-input").value = "";
+    $("date-input").value = todayISO();
+    openModal("new-round-modal");
+  }
+
+  $("course-select").addEventListener("change", () => {
+    const isAdd = $("course-select").value === "__add__";
+    $("course-new-wrap").classList.toggle("hidden", !isAdd);
+    if (isAdd) setTimeout(() => $("course-new-input").focus(), 50);
+  });
+
   $("new-round-btn").addEventListener("click", () => {
-    $("course-input").value = "";
-    $("date-input").value = todayISO();
     closeModal("rounds-modal");
-    openModal("new-round-modal");
-    setTimeout(() => $("course-input").focus(), 50);
+    openNewRoundModal();
   });
-  $("start-first-round").addEventListener("click", () => {
-    $("course-input").value = "";
-    $("date-input").value = todayISO();
-    openModal("new-round-modal");
-    setTimeout(() => $("course-input").focus(), 50);
-  });
+  $("start-first-round").addEventListener("click", openNewRoundModal);
   $("cancel-new-round").addEventListener("click", () => closeModal("new-round-modal"));
   $("confirm-new-round").addEventListener("click", () => {
-    const course = $("course-input").value.trim() || "Unnamed course";
+    let course;
+    if ($("course-select").value === "__add__") {
+      course = $("course-new-input").value.trim();
+      if (!course) { $("course-new-input").focus(); return; }
+      if (!state.courses.includes(course)) state.courses.push(course);
+    } else {
+      course = $("course-select").value;
+    }
     const date = $("date-input").value || todayISO();
     const id = uid();
     state.rounds[id] = { id, course, date, createdAt: Date.now(), holes: {} };
