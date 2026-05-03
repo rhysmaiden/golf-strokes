@@ -83,13 +83,19 @@
   .flag-btn.selected::before { content: "✓ "; }
   .options { padding: 0 14px 8px; }
   .opt {
-    display: flex; align-items: center; gap: 12px; padding: 10px 4px;
+    display: flex; align-items: center; gap: 10px; padding: 8px 4px;
     border-top: 1px solid var(--line); min-height: var(--tap);
   }
   .opt:first-child { border-top: none; }
-  .opt input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent); flex-shrink: 0; }
-  .opt label { margin: 0; color: var(--ink); font-size: 15px; flex: 1; cursor: pointer; }
-  .opt .count { font-size: 13px; color: var(--muted); }
+  .opt .opt-name { color: var(--ink); font-size: 15px; flex: 1; min-width: 0; }
+  .opt .num-buttons { display: flex; gap: 4px; flex-shrink: 0; }
+  .opt .num-btn {
+    width: 36px; min-height: 36px; padding: 0; border-radius: 6px;
+    border: 1px solid var(--line); background: #fff; color: var(--muted);
+    font-size: 14px; font-weight: 600;
+  }
+  details.gain .opt .num-btn.selected { background: var(--gain); color: #fff; border-color: var(--gain); }
+  details.loss .opt .num-btn.selected { background: var(--loss); color: #fff; border-color: var(--loss); }
 
   .summary-table { width: 100%; border-collapse: collapse; font-size: 14px; }
   .summary-table th, .summary-table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
@@ -370,15 +376,30 @@
     return state.activeId ? state.rounds[state.activeId] : null;
   }
   function ensureHole(round, n) {
-    if (!round.holes[n]) round.holes[n] = { gain: [], loss: [], gir: false, girPlus1: false };
+    if (!round.holes[n]) round.holes[n] = { gain: {}, loss: {}, gir: false, girPlus1: false };
     const h = round.holes[n];
-    // Migrate from older schema (null/true/false): treat anything not === true as false
+    h.gain = toCountMap(h.gain);
+    h.loss = toCountMap(h.loss);
     h.gir = h.gir === true;
     h.girPlus1 = h.girPlus1 === true;
     return h;
   }
+  function toCountMap(v) {
+    if (Array.isArray(v)) {
+      const out = {};
+      v.forEach((opt) => { out[opt] = (out[opt] || 0) + 1; });
+      return out;
+    }
+    return (v && typeof v === "object") ? v : {};
+  }
+  function countTotal(map) {
+    let t = 0; for (const k in map) t += map[k] || 0; return t;
+  }
   function holeHasData(h) {
-    return !!h && (h.gain.length || h.loss.length || h.gir || h.girPlus1);
+    if (!h) return false;
+    const gainTotal = Array.isArray(h.gain) ? h.gain.length : countTotal(h.gain);
+    const lossTotal = Array.isArray(h.loss) ? h.loss.length : countTotal(h.loss);
+    return !!(gainTotal || lossTotal || h.gir || h.girPlus1);
   }
 
   // UI state
@@ -435,21 +456,16 @@
 
     // Options for current hole
     const hole = ensureHole(r, currentHole);
-    renderOptions("gain-options", GAIN_OPTIONS, hole.gain, (next) => {
-      hole.gain = next;
+    renderOptions("gain-options", GAIN_OPTIONS, hole.gain, () => {
       save();
-      $("gain-pill").textContent = hole.gain.length;
-      // refresh hole dot
       renderTrack();
     });
-    renderOptions("loss-options", LOSS_OPTIONS, hole.loss, (next) => {
-      hole.loss = next;
+    renderOptions("loss-options", LOSS_OPTIONS, hole.loss, () => {
       save();
-      $("loss-pill").textContent = hole.loss.length;
       renderTrack();
     });
-    $("gain-pill").textContent = hole.gain.length;
-    $("loss-pill").textContent = hole.loss.length;
+    $("gain-pill").textContent = countTotal(hole.gain);
+    $("loss-pill").textContent = countTotal(hole.loss);
 
     renderFlags(hole);
   }
@@ -466,28 +482,33 @@
     });
   }
 
-  function renderOptions(containerId, options, selected, onChange) {
+  function renderOptions(containerId, options, countMap, onChange) {
     const container = $(containerId);
     container.innerHTML = "";
-    const set = new Set(selected);
     options.forEach((opt) => {
       const row = document.createElement("div");
       row.className = "opt";
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      const cbId = containerId + "-" + opt.replace(/\W+/g, "-");
-      cb.id = cbId;
-      cb.checked = set.has(opt);
-      const label = document.createElement("label");
-      label.htmlFor = cbId;
-      label.textContent = opt;
-      cb.addEventListener("change", () => {
-        if (cb.checked) set.add(opt);
-        else set.delete(opt);
-        onChange(Array.from(set));
+      const name = document.createElement("div");
+      name.className = "opt-name";
+      name.textContent = opt;
+      row.appendChild(name);
+
+      const buttons = document.createElement("div");
+      buttons.className = "num-buttons";
+      const current = countMap[opt] || 0;
+      [1, 2, 3].forEach((n) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "num-btn" + (current === n ? " selected" : "");
+        b.textContent = n;
+        b.addEventListener("click", () => {
+          if (countMap[opt] === n) delete countMap[opt]; // tap selected to clear
+          else countMap[opt] = n;
+          onChange();
+        });
+        buttons.appendChild(b);
       });
-      row.appendChild(cb);
-      row.appendChild(label);
+      row.appendChild(buttons);
       container.appendChild(row);
     });
   }
@@ -505,8 +526,14 @@
     HOLE_IDS.forEach((id) => {
       const h = r.holes[id];
       if (!h) return;
-      h.gain.forEach((o) => { if (o in agg.counts.gain) { agg.counts.gain[o]++; agg.totalGain++; } });
-      h.loss.forEach((o) => { if (o in agg.counts.loss) { agg.counts.loss[o]++; agg.totalLoss++; } });
+      const gainMap = toCountMap(h.gain);
+      const lossMap = toCountMap(h.loss);
+      for (const o in gainMap) {
+        if (o in agg.counts.gain) { agg.counts.gain[o] += gainMap[o]; agg.totalGain += gainMap[o]; }
+      }
+      for (const o in lossMap) {
+        if (o in agg.counts.loss) { agg.counts.loss[o] += lossMap[o]; agg.totalLoss += lossMap[o]; }
+      }
       if (h.gir === true) agg.gir++;
       if (h.girPlus1 === true) agg.girp1++;
       if (holeHasData(h)) agg.holesPlayed++;
@@ -556,13 +583,13 @@
     const gainRow = document.createElement("tr");
     gainRow.innerHTML = "<td>▲</td>" + HOLE_IDS.map((id)=>{
       const h = r.holes[id];
-      const c = h ? h.gain.length : 0;
+      const c = h ? (Array.isArray(h.gain) ? h.gain.length : countTotal(h.gain)) : 0;
       return `<td class="${c?"gain":"empty"}">${c||"–"}</td>`;
     }).join("");
     const lossRow = document.createElement("tr");
     lossRow.innerHTML = "<td>▼</td>" + HOLE_IDS.map((id)=>{
       const h = r.holes[id];
-      const c = h ? h.loss.length : 0;
+      const c = h ? (Array.isArray(h.loss) ? h.loss.length : countTotal(h.loss)) : 0;
       return `<td class="${c?"loss":"empty"}">${c||"–"}</td>`;
     }).join("");
     const tickCell = (v) => v === true ? `<td class="gain">✓</td>` : `<td class="empty">–</td>`;
